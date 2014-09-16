@@ -24,8 +24,8 @@ BOARDHEIGHT = 400 # 7 # number of rows of icons
 XMARGIN= int((WINDOWWIDTH - (BOARDWIDTH)) / 2)
 YMARGIN= int((WINDOWHEIGHT - (BOARDHEIGHT)) / 2)
 
-NUMTYPES=10 # number of types of objects
-NUMEACHTYPE=50 # number of objects of each type
+NUMTYPES=3 # number of types of objects
+NUMEACHTYPE=20 # number of objects of each type
 NUMOBJECTS=NUMTYPES*NUMEACHTYPE # total number of objects
 
 MINRANDOMWIDTH = min(BOARDWIDTH/40,BOARDHEIGHT/40)
@@ -83,10 +83,11 @@ LIGHTBGCOLOR=GRAY
 BOARDCOLOR=WHITE
 RADIUS=10
 ELEMSELECTORSIZE=5*RADIUS
-SELECTEDCOLOR=RED
+SELECTEDCOLOR=BOARDCOLOR
 LINEWIDTH=1
 HIGHLIGHTCOLOR=BLUE
 TEXTCOLOR=SILVER
+STARTTEXTCOLOR=BLACK
 TILECOLOR=NAVYBLUE
 BUTTONCOLOR=NAVYBLUE
 BASICFONTSIZE = 20
@@ -98,9 +99,10 @@ LINES='lines'
 OVAL='oval'
 
 ALLCOLORS=(DARKBLUE,TEAL,MAROON,DARKPURPLE,DARKGRAY,LIME,PURPLE,GRAY,RED,GREEN,BLUE,YELLOW,ORANGE,CYAN)
+NUMBEROFAVAILABLECOLORS=len(ALLCOLORS)
 ALLSHAPES=(DONUT,SQUARE,DIAMOND,LINES,OVAL)
 
-assert len(ALLCOLORS)>=NUMTYPES, "Not enough colors for so many types. Use fewer types or increase nuumber of colors"
+assert NUMBEROFAVAILABLECOLORS>=NUMTYPES, "Not enough colors for so many types. Use fewer types or increase nuumber of colors"
 
 # assert len(ALLCOLORS) * len(ALLSHAPES) * 2 >= BOARDWIDTH * BOARDHEIGHT, "Board is too big for the number of shapes/colors defined."
 
@@ -111,9 +113,7 @@ def main():
 	DISPLAYSURF=pygame.display.set_mode((WINDOWWIDTH,WINDOWHEIGHT))
 	BASICFONT = pygame.font.Font('freesansbold.ttf', BASICFONTSIZE)
 	
-	NEW_SURF, NEW_RECT = makeText('New Board', TEXTCOLOR, TILECOLOR, WINDOWWIDTH - 120, WINDOWHEIGHT - 60)
-	selectorSurf=makeSelector(NUMTYPES)
-
+	
 	mousex = 0 # used to store x coordinate of mouse event
 	mousey = 0 # used to store y coordinate of mouse event
 	centerx=0 # used to store x coordinate on center chosen when clicking down
@@ -122,14 +122,26 @@ def main():
 	updateCircles=False
 
 
-
-    	pygame.display.set_caption('Clusterz_v02')
+    	pygame.display.set_caption('BlackCat')
 	
-	objects=getRandomizedObjects()
-	circles=range(NUMTYPES)
-	for i in range(NUMTYPES):
+	# welcome screen with basic instructions
+	startScreen() 
+
+	# choose the level, i.e. number of colors and number of objects of each color 
+	numtypes, numeachtype = levelSelection()
+	numobjects=numtypes*numeachtype 
+
+	# make some buttons
+	NEW_SURF, NEW_RECT = makeText('New Board', TEXTCOLOR, TILECOLOR, WINDOWWIDTH - 120, WINDOWHEIGHT - 60)
+	selectorSurf=makeSelector(numtypes)
+
+
+	objects=getRandomizedObjects(numtypes,numeachtype)
+	circles=range(numtypes)
+	for i in range(numtypes):
 		circles[i]=[0,0,0,0]
 	guessType=0
+	score=0
 
 	# print objects
 		
@@ -140,7 +152,7 @@ def main():
 	while True: # main game loop
 					
 		DISPLAYSURF.fill(BGCOLOR) # drawing the window
-		drawBoard(objects)
+		drawBoard(objects,numtypes,numeachtype)
 		
 		for event in pygame.event.get(): # event handling loop
 			if event.type == QUIT or (event.type == KEYUP and event.key == K_ESCAPE):
@@ -151,15 +163,16 @@ def main():
 				guessRadius=distance(mousex,mousey,centerx,centery)
 			elif event.type == MOUSEBUTTONDOWN:
 				centerx, centery=event.pos
-				if isOnBoard(centerx-XMARGIN,centery-YMARGIN): # if click on the board (don't forget to substract the margin values to be in coard coordinates)
+				if isOnBoard(centerx-XMARGIN,centery-YMARGIN): # if click on the board (don't forget to substract the margin values to be in board coordinates)
 					guessRadius=0
 					updateCircles = True
 				elif NEW_RECT.collidepoint(event.pos):
-					objects=getRandomizedObjects()
-					circles=range(NUMTYPES)
-					for i in range(NUMTYPES):
+					objects=getRandomizedObjects(numtypes,numeachtype)
+					circles=range(numtypes)
+					for i in range(numtypes):
 						circles[i]=[0,0,0,0]
 					guessType=0
+					score=0
 			elif event.type == MOUSEBUTTONUP:
 				mousex,mousey=event.pos
 				guessRadius=distance(mousex,mousey,centerx,centery)
@@ -167,7 +180,18 @@ def main():
 					circles[guessType]=[centerx, centery, guessRadius,guessType]
 				updateCircles = False
 				if not NEW_RECT.collidepoint(event.pos): #if on New board button, don't go to the next guess type
-					guessType=(guessType+1)%NUMTYPES
+					#guessType=(guessType+1)%numtypes #for looping over the different possible guess types
+					guessType=guessType+1 # to guess for each color type just once
+				if guessType==numtypes:
+					score=computeScore(objects,circles,numtypes,numeachtype)
+					endScreen(score,circles,numobjects)
+					objects=getRandomizedObjects(numtypes,numeachtype)
+					circles=range(numtypes)
+					for i in range(numtypes):
+						circles[i]=[0,0,0,0]
+					guessType=0
+					score=0
+
 
 
 
@@ -217,7 +241,7 @@ def main():
 
 		#if mouseDown:
 		drawCircles(circles)
-		drawSelector(selectorSurf,guessType)
+		drawSelector(selectorSurf,guessType,numtypes)
 		
 		
 		pygame.display.update()
@@ -235,16 +259,16 @@ def generateRevealedBoxesData(val):
 		revealedBoxes.append([val]*BOARDHEIGHT)
 	return revealedBoxes
 
-def getRandomizedObjects():
-	# returns the objects structure, a list of NUMTYPE lists of NUMEACHTYPE points
+def getRandomizedObjects(numtypes,numeachtype):
+	# returns the objects structure, a list of numtypes lists of numeachtype points
 	objects=[]
 	randomSeeds=[]
 	randomWidths=[]
-	for i in range(NUMTYPES):
+	for i in range(numtypes):
 		randomSeeds.append(getRandomizedPoint())
 		randomWidths.append(getRandomizedWidth())
 		objectstype=[]
-		for j in range(NUMEACHTYPE):
+		for j in range(numeachtype):
 			randx, randy =getGaussianPoint(randomSeeds[i],randomWidths[i]) # draws a point at random
 			objectstype.append((randx,randy))
 		objectstype=tuple(objectstype)
@@ -366,7 +390,7 @@ def coverBoxesAnimation(board, boxesToCover):
 		drawBoxCovers(board, boxesToCover, coverage)
 
 
-def drawBoard(objects):
+def drawBoard(objects,numtypes,numeachtype):
 	
 	# draw the board first
 	pygame.draw.rect(DISPLAYSURF, BOARDCOLOR, (XMARGIN, YMARGIN, BOARDWIDTH, BOARDHEIGHT))
@@ -374,8 +398,8 @@ def drawBoard(objects):
 	# now we'll write objects with transparency
 	#objectsSurface=DISPLAYSURF.convert_alpha()
 
-	for objecttype in range(NUMTYPES):
-		for objectid in range(NUMEACHTYPE):
+	for objecttype in range(numtypes):
+		for objectid in range(numeachtype):
 			pygame.draw.circle(DISPLAYSURF, ALLCOLORS[objecttype], (XMARGIN+objects[objecttype][objectid][0],YMARGIN+objects[objecttype][objectid][1] ), RADIUS)
 			pygame.draw.circle(DISPLAYSURF, BLACK, (XMARGIN+objects[objecttype][objectid][0],YMARGIN+objects[objecttype][objectid][1] ), RADIUS,LINEWIDTH)
 
@@ -446,21 +470,168 @@ def makeSelector(numtypes):
 	selectorSurf=pygame.Rect(left,top,selwidth,selheight)
 	return selectorSurf
 
-def drawSelector(selectorSurf,guessType):
+def drawSelector(selectorSurf,guessType,numtypes):
 	guesstop=selectorSurf.top
 	guessleft=selectorSurf.left+guessType*ELEMSELECTORSIZE
 	selectedSurf=pygame.Rect(guessleft,guesstop,ELEMSELECTORSIZE,ELEMSELECTORSIZE)
-	pygame.draw.rect(DISPLAYSURF, BUTTONCOLOR,selectorSurf)# (selectorSurf.top,selectorSurf.left,selectorSurf.height,selectorSurf.width))
+	pygame.draw.rect(DISPLAYSURF, BGCOLOR,selectorSurf)# (selectorSurf.top,selectorSurf.left,selectorSurf.height,selectorSurf.width))
 	pygame.draw.rect(DISPLAYSURF,SELECTEDCOLOR,selectedSurf)
 
-	for i in range(NUMTYPES):
+	for i in range(numtypes):
 		xcenter=int(selectorSurf.left+(i+0.5)*ELEMSELECTORSIZE)
 		ycenter=selectorSurf.top+ELEMSELECTORSIZE/2
 		pygame.draw.circle(DISPLAYSURF, ALLCOLORS[i], (xcenter,ycenter), RADIUS)
 		pygame.draw.circle(DISPLAYSURF, BLACK, (xcenter,ycenter ), RADIUS,LINEWIDTH)
 
 
+def startScreen():
+    """Display the start screen (which has the title and instructions)
+    until the player presses a key. Returns None."""
 
+    # Position the title image.
+    #titleRect = IMAGESDICT['title'].get_rect()
+    topCoord = 0.3*WINDOWHEIGHT # topCoord tracks where to position the top of the text
+    #titleRect.top = topCoord
+    #titleRect.centerx = HALF_WINWIDTH
+    #topCoord += titleRect.height
+
+    # Unfortunately, Pygame's font & text system only shows one line at
+    # a time, so we can't use strings with \n newline characters in them.
+    # So we will use a list with each line in it.
+    instructionText = ['Welcome to BlackCat!',
+                       'Draw color circles around the corresponding clusters.',
+                       #'Click "New Board" to reset the game, press Esc to quit.',
+                       'More features and levels soon!',
+		       'Press a key to start playing.']
+
+    # Start with drawing a blank color to the entire window:
+    DISPLAYSURF.fill(BGCOLOR)
+
+    # Draw the title image to the window:
+    # DISPLAYSURF.blit(IMAGESDICT['title'], titleRect)
+
+    # Position and draw the text.
+    for i in range(len(instructionText)):
+        instSurf = BASICFONT.render(instructionText[i], 1, STARTTEXTCOLOR)
+        instRect = instSurf.get_rect()
+        topCoord += 10 # 10 pixels will go in between each line of text.
+        instRect.top = topCoord
+        instRect.centerx = 0.5*WINDOWWIDTH
+        topCoord += instRect.height # Adjust for the height of the line.
+        DISPLAYSURF.blit(instSurf, instRect)
+
+    while True: # Main loop for the start screen.
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                terminate()
+            elif event.type == KEYDOWN:
+                if event.key == K_ESCAPE:
+                    terminate()
+                return # user has pressed a key, so return.
+
+        # Display the DISPLAYSURF contents to the actual screen.
+        pygame.display.update()
+        FPSCLOCK.tick()
+
+def levelSelection():
+	"""Display the level section screen and ask for user input."""
+
+	topCoord = 0.3*WINDOWHEIGHT 
+
+	levelSelectionText = ['Now let us choose the difficulty',
+                       'Choose the number of colors Ncol (default: '+str(NUMTYPES)+').',
+		       'Choose the number of elements of each color Nel (default: '+str(NUMEACHTYPE)+').',
+                       #'Click "New Board" to reset the game, press Esc to quit.',
+                       #'More features and levels soon!',
+		       'Press a key to start playing.']
+
+	# Start with drawing a blank color to the entire window:
+	DISPLAYSURF.fill(BGCOLOR)
+
+	# Position and draw the text.
+	for i in range(len(levelSelectionText)):
+	        instSurf = BASICFONT.render(levelSelectionText[i], 1, STARTTEXTCOLOR)
+	        instRect = instSurf.get_rect()
+	        topCoord += 10 # 10 pixels will go in between each line of text.
+	        instRect.top = topCoord
+	        instRect.centerx = 0.5*WINDOWWIDTH
+	        topCoord += instRect.height # Adjust for the height of the line.
+	        DISPLAYSURF.blit(instSurf, instRect)
+
+	while True: # Main loop for the start screen.
+		for event in pygame.event.get():
+			if event.type == QUIT:
+				terminate()
+			elif event.type == KEYDOWN:
+				if event.key == K_ESCAPE:
+					terminate()
+				return NUMTYPES, NUMEACHTYPE
+
+	        # Display the DISPLAYSURF contents to the actual screen.
+        	pygame.display.update()
+		FPSCLOCK.tick()
+
+def computeScore(objects,circles,numtypes,numeachtype):
+	score=0
+	for i in range(numtypes):
+		circle=circles[i]
+		# first get the number of objects properly circled
+		for j in range(numeachtype):
+			currentobject=objects[i][j]
+			if isInCircle(currentobject,circle):
+				score+=1
+		# now remove points for objects improperly circled
+		for iobj in range(numtypes):
+			if not(iobj==i):# only look objects of a different color
+				for j in range(numeachtype):
+					currentobject=objects[iobj][j]
+					if isInCircle(currentobject,circle):
+						score-=1
+	return score
+
+def isInCircle(currentobject,circle):
+	if distance(currentobject[0],currentobject[1],circle[0]-XMARGIN,circle[1]-YMARGIN)<=circle[2]:
+		#print 'OK'
+		return True
+	else:
+		return False
+
+def endScreen(score,circles,numobjects):
+	"""Display the level section screen and ask for user input."""
+
+	topCoord = 0.8*WINDOWHEIGHT 
+
+	scoreText = ['You got a score of: '+str(score)+' / '+str(numobjects)+' !',
+		       'Press a key to draw new board.',
+		       '("New Board" button does not work here.)']
+
+	# Start with drawing a blank color to the entire window:
+	#DISPLAYSURF.fill(BGCOLOR)
+
+	drawCircles(circles)
+
+	# Position and draw the text.
+	for i in range(len(scoreText)):
+	        instSurf = BASICFONT.render(scoreText[i], 1, STARTTEXTCOLOR)
+	        instRect = instSurf.get_rect()
+	        topCoord += 10 # 10 pixels will go in between each line of text.
+	        instRect.top = topCoord
+	        instRect.centerx = 0.5*WINDOWWIDTH
+	        topCoord += instRect.height # Adjust for the height of the line.
+	        DISPLAYSURF.blit(instSurf, instRect)
+
+	while True: # Main loop for the start screen.
+		for event in pygame.event.get():
+			if event.type == QUIT:
+				terminate()
+			elif event.type == KEYDOWN:
+				if event.key == K_ESCAPE:
+					terminate()
+				return
+
+	        # Display the DISPLAYSURF contents to the actual screen.
+        	pygame.display.update()
+		FPSCLOCK.tick()
 
 
 
